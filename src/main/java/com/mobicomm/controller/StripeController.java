@@ -1,75 +1,83 @@
 package com.mobicomm.controller;
 
+import com.mobicomm.dto.StripeCheckoutRequest;
 import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.checkout.SessionCreateParams;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@CrossOrigin(origins = "*") // Enable CORS for all origins during development
+@RequestMapping("/api/stripe")
+@CrossOrigin(origins = "*")
 public class StripeController {
+    private static final Logger logger = LoggerFactory.getLogger(StripeController.class);
 
-    public StripeController() {
-        // Initialize with your secret key
-        Stripe.apiKey = "sk_test_51R3WxgRDO3h57yCpyi3sJXJ3amNgfuyuPRLULxSOj0pyd9RlIQizGqTJGoaVIXqOznlUf5oTGYZb0TNjgnlzRFnU00OIWssyE6";
-    }
+    @Value("${stripe.api.key}")
+    private String stripeSecretKey;
 
-    @PostMapping("/create-checkout")
-    public Map<String, String> checkout(@RequestBody Map<String, Object> request) {
+    // In your current code you seem to have a separate publishable key
+    @Value("${stripe.publishable.key:pk_test_yourPublishableKey}")
+    private String stripePublishableKey;
+
+    @PostMapping("/create-checkout-session")
+    public ResponseEntity<?> createCheckoutSession(@RequestBody StripeCheckoutRequest request) {
         try {
-            System.out.println("Received payment request: " + request); // Log incoming request
+            // Log the received request for debugging
+            logger.info("Received checkout request: {}", request);
 
-            // Get price from request
-            double price = Double.parseDouble(request.get("price").toString());
+            // Initialize Stripe (if not using a config class)
+            Stripe.apiKey = stripeSecretKey;
 
             // Create session
             SessionCreateParams params = SessionCreateParams.builder()
+                    .setMode(SessionCreateParams.Mode.PAYMENT)
+                    .setSuccessUrl("http://localhost:63342/success.html")
+                    .setCancelUrl("http://localhost:63342/cancel.html")
                     .addLineItem(
                             SessionCreateParams.LineItem.builder()
+                                    .setQuantity(1L)
                                     .setPriceData(
                                             SessionCreateParams.LineItem.PriceData.builder()
                                                     .setCurrency("inr")
-                                                    .setUnitAmount((long)(price * 100))
+                                                    .setUnitAmount(request.getPrice().multiply(new BigDecimal(100)).longValue())
                                                     .setProductData(
                                                             SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                                                    .setName("MobiComm Recharge")
+                                                                    .setName(request.getPlanName())
                                                                     .build()
                                                     )
                                                     .build()
                                     )
-                                    .setQuantity(1L)
                                     .build()
                     )
-                    .setMode(SessionCreateParams.Mode.PAYMENT)
-                    .setSuccessUrl("http://localhost:63342/success.html")
-                    .setCancelUrl("http://localhost:63342/cancel.html")
+                    .putMetadata("mobileNumber", request.getMobileNumber())
+                    .putMetadata("planId", request.getPlanId().toString())
                     .build();
 
             Session session = Session.create(params);
 
-            // Return URL for redirect
+            // Return session information
             Map<String, String> response = new HashMap<>();
-            response.put("url", session.getUrl());
-            System.out.println("Created Stripe checkout URL: " + session.getUrl()); // Log the URL
-            return response;
+            response.put("sessionId", session.getId());
+            response.put("publicKey", stripePublishableKey);
+
+            return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            System.err.println("Error creating checkout session: " + e.getMessage()); // Log any errors
-            e.printStackTrace();
-
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return error;
+            logger.error("Error creating checkout session", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
         }
-    }
-
-    // Add a test endpoint to verify server is accessible
-    @GetMapping("/ping")
-    public Map<String, String> ping() {
-        Map<String, String> response = new HashMap<>();
-        response.put("status", "Server is running");
-        return response;
     }
 }

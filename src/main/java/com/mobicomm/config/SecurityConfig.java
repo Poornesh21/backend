@@ -90,7 +90,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
 
                         // Stripe payment endpoints - Allow without authentication
-                        .requestMatchers("/api/payment/stripe/**").permitAll()
+                        .requestMatchers("/api/stripe/**").permitAll()
 
                         // Public API endpoints - read-only access
                         .requestMatchers(HttpMethod.GET, "/api/plans/**").permitAll()
