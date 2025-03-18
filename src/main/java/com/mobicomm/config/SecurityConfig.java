@@ -89,10 +89,13 @@ public class SecurityConfig {
                         // Authentication endpoints
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // Add this line to the SecurityConfig.java file in the authorizeHttpRequests section
-                        .requestMatchers("/api/email/**").permitAll() // Allow email endpoints without authentication
+                        // Email endpoints
+                        .requestMatchers("/api/email/**").permitAll()
 
-                        .requestMatchers("/api/razorpay/**").permitAll()
+                        // User information endpoints - allow public access
+                        .requestMatchers("/api/users/mobile/**").permitAll()
+                        .requestMatchers("/api/users/update-email").permitAll()
+
                         // Public API endpoints - read-only access
                         .requestMatchers(HttpMethod.GET, "/api/plans/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
@@ -108,7 +111,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
                         // Static resources
-                        .requestMatchers("/", "/index.html", "/Recharge.html", "/Payment.html", "/css/**", "/js/**", "/images/**").permitAll()
+                        .requestMatchers("/", "/index.html", "/Recharge.html", "/Payment.html",
+                                "/RazorpayPayment.html", "/css/**", "/js/**", "/images/**").permitAll()
 
                         // Any other request needs authentication
                         .anyRequest().authenticated()

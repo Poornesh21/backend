@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -71,6 +73,7 @@ public class AuthController {
 
     /**
      * Validate mobile number without full authentication
+     * Enhanced to return email information if available
      */
     @PostMapping("/validate-mobile")
     public ResponseEntity<?> validateMobileNumber(@RequestBody LoginRequest loginRequest) {
@@ -87,14 +90,29 @@ public class AuthController {
         Optional<User> userOptional = userRepository.findByMobileNumber(mobileNumber);
 
         if (userOptional.isPresent()) {
+            User user = userOptional.get();
+
             // Generate token for the user
             String jwt = jwtTokenUtil.generateTokenFromUsername(mobileNumber);
 
-            return ResponseEntity.ok(new JwtResponse(
-                    jwt,
-                    mobileNumber,
-                    List.of("ROLE_USER")
-            ));
+            // Create response with user details
+            Map<String, Object> response = new HashMap<>();
+            response.put("token", jwt);
+            response.put("type", "Bearer");
+            response.put("username", mobileNumber);
+            response.put("roles", List.of("ROLE_USER"));
+
+            // Include email if available
+            if (user.getEmail() != null && !user.getEmail().isEmpty()) {
+                response.put("email", user.getEmail());
+            }
+
+            // Include last recharge date if available
+            if (user.getLastRechargeDate() != null) {
+                response.put("lastRechargeDate", user.getLastRechargeDate().toString());
+            }
+
+            return ResponseEntity.ok(response);
         } else {
             // Mobile number not found
             return ResponseEntity
