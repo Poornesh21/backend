@@ -1,7 +1,6 @@
 package com.mobicomm.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -21,8 +20,8 @@ public class EmailService {
     @Autowired
     private JavaMailSender mailSender;
 
-    @Value("${admin.email:admin@mobicomm.com}")
-    private String adminEmail; // Admin email from properties, default if not set
+
+    private String adminEmail = "poorneshsundravel@gmail.com";
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
 

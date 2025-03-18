@@ -41,7 +41,11 @@ public class TransactionService {
     // Add this code to the processRecharge method in TransactionService.java
     @Transactional
     public TransactionDto processRecharge(RechargeRequest request) {
-        // Validate planId is not null
+        // Validate input parameters
+        if (request.getMobileNumber() == null || request.getMobileNumber().isEmpty()) {
+            throw new IllegalArgumentException("Mobile number is required");
+        }
+
         if (request.getPlanId() == null) {
             throw new IllegalArgumentException("Plan ID cannot be null");
         }
@@ -59,16 +63,15 @@ public class TransactionService {
         Plan plan = planRepository.findById(request.getPlanId())
                 .orElseThrow(() -> new ResourceNotFoundException("Plan", request.getPlanId()));
 
-        // Create transaction entity - Note we're explicitly setting all required fields
+        // Create a NEW transaction for each recharge
         Transaction transaction = new Transaction();
-        transaction.setUserId(user.getUserId()); // This was causing the "id must not be null" error
+        transaction.setUserId(user.getUserId());
         transaction.setPlan(plan);
         transaction.setAmount(request.getAmount() != null ? request.getAmount() : BigDecimal.ZERO);
 
-        // Set status - Using one of the ENUM values defined in the database schema
-        // ENUM('Pending', 'Completed', 'Failed')
+        // Set status - Using exact ENUM value with correct case
         transaction.setPaymentStatus(request.getPaymentStatus() != null ?
-                request.getPaymentStatus() : "Completed"); // Using exact ENUM value with correct case
+                request.getPaymentStatus() : "Completed");
 
         transaction.setPaymentMethod(request.getPaymentMethod());
 
@@ -76,7 +79,7 @@ public class TransactionService {
         transaction.setTransactionDate(request.getTransactionDate() != null ?
                 request.getTransactionDate() : LocalDateTime.now());
 
-        // Set expiry date - Calculate based on plan validity or use provided value
+        // Calculate expiry date
         LocalDateTime expiryDate;
         if (request.getExpiryDate() != null) {
             expiryDate = request.getExpiryDate();
@@ -88,15 +91,12 @@ public class TransactionService {
         }
         transaction.setExpiryDate(expiryDate);
 
+        // Save the NEW transaction
+        Transaction savedTransaction = transactionRepository.save(transaction);
+
         // Update user's last recharge date
         user.setLastRechargeDate(java.sql.Timestamp.valueOf(transaction.getTransactionDate()));
         userRepository.save(user);
-
-        // Log what we're about to save
-        System.out.println("Saving transaction: " + transaction);
-
-        // Save transaction
-        Transaction savedTransaction = transactionRepository.save(transaction);
 
         // Convert to DTO
         TransactionDto transactionDto = convertToDto(savedTransaction);
@@ -104,19 +104,22 @@ public class TransactionService {
         // If user has an email, send confirmation and invoice
         if (user.getEmail() != null && !user.getEmail().isEmpty()) {
             try {
+                String planName = transactionDto.getPlanName() != null ?
+                        transactionDto.getPlanName() :
+                        (plan.getDataLimit() + " Plan");
+
                 emailService.sendPaymentConfirmationEmail(
                         user.getEmail(),
                         user.getMobileNumber(),
-                        transactionDto.getPlanName() != null ? transactionDto.getPlanName() : plan.getDataLimit() + " Plan",
+                        planName,
                         transaction.getAmount().toString(),
                         transaction.getTransactionId().toString()
                 );
 
-                // Also send invoice
                 emailService.sendInvoiceEmail(
                         user.getEmail(),
                         user.getMobileNumber(),
-                        transactionDto.getPlanName() != null ? transactionDto.getPlanName() : plan.getDataLimit() + " Plan",
+                        planName,
                         transaction.getAmount().toString(),
                         transaction.getTransactionId().toString(),
                         transaction.getPaymentMethod(),
@@ -127,8 +130,50 @@ public class TransactionService {
                 System.err.println("Failed to send email: " + e.getMessage());
             }
         }
+        // Update user's last recharge date
+        user.setLastRechargeDate(java.sql.Timestamp.valueOf(transaction.getTransactionDate()));
+        userRepository.save(user);
 
         return transactionDto;
+    }
+
+
+    private LocalDateTime calculateExpiryDate(Plan plan) {
+        if (plan.getValidityDays() != null && plan.getValidityDays() > 0) {
+            return LocalDateTime.now().plusDays(plan.getValidityDays());
+        }
+        // Default to 30 days if no validity specified
+        return LocalDateTime.now().plusDays(30);
+    }
+
+    private void sendEmails(User user, TransactionDto transactionDto, Transaction transaction, Plan plan) {
+        if (user.getEmail() != null && !user.getEmail().isEmpty()) {
+            try {
+                String planName = transactionDto.getPlanName() != null
+                        ? transactionDto.getPlanName()
+                        : (plan.getDataLimit() + " Plan");
+
+                emailService.sendPaymentConfirmationEmail(
+                        user.getEmail(),
+                        user.getMobileNumber(),
+                        planName,
+                        transaction.getAmount().toString(),
+                        transaction.getTransactionId().toString()
+                );
+
+                emailService.sendInvoiceEmail(
+                        user.getEmail(),
+                        user.getMobileNumber(),
+                        planName,
+                        transaction.getAmount().toString(),
+                        transaction.getTransactionId().toString(),
+                        transaction.getPaymentMethod(),
+                        transaction.getTransactionDate().toString()
+                );
+            } catch (Exception e) {
+                System.err.println("Failed to send email: " + e.getMessage());
+            }
+        }
     }
 
     /**

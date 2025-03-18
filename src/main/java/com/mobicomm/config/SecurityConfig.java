@@ -92,6 +92,7 @@ public class SecurityConfig {
                         // Add this line to the SecurityConfig.java file in the authorizeHttpRequests section
                         .requestMatchers("/api/email/**").permitAll() // Allow email endpoints without authentication
 
+                        .requestMatchers("/api/razorpay/**").permitAll()
                         // Public API endpoints - read-only access
                         .requestMatchers(HttpMethod.GET, "/api/plans/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()

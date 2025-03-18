@@ -12,8 +12,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -30,13 +28,14 @@ public class DashboardController {
     private TransactionService transactionService;
 
     /**
-     * Fetch expiring transactions within the next 3 days
+     * Get users with plans expiring within 1-3 days
+     * This endpoint specifically focuses on user data with their expiring plans
      */
     @GetMapping("/expiring-plans")
-    public ResponseEntity<List<TransactionDto>> getExpiringPlans() {
-        // Updated method name to match the service method
-        List<TransactionDto> expiringPlans = dashboardService.getExpiringTransactionsWithin3Days();
-        return ResponseEntity.ok(expiringPlans);
+    public ResponseEntity<List<TransactionDto>> getExpiringTransactionsWithin3Days() {
+        // Use transaction service to get transactions expiring in 3 days
+        List<TransactionDto> expiringTransactions = transactionService.getRecentTransactions(3);
+        return ResponseEntity.ok(expiringTransactions);
     }
 
     /**
@@ -64,9 +63,10 @@ public class DashboardController {
      * Get upcoming expiring transactions
      */
     @GetMapping("/upcoming-expiring-plans")
-    public ResponseEntity<List<TransactionDto>> getUpcomingExpiringPlans() {
-        List<TransactionDto> upcomingExpiringPlans = dashboardService.getAllUpcomingExpiringTransactions();
-        return ResponseEntity.ok(upcomingExpiringPlans);
+    public ResponseEntity<List<TransactionDto>> getAllUpcomingExpiringTransactions() {
+        // Use transaction service to get transactions expiring in 30 days
+        List<TransactionDto> upcomingExpiringTransactions = transactionService.getRecentTransactions(30);
+        return ResponseEntity.ok(upcomingExpiringTransactions);
     }
 
     /**
@@ -76,19 +76,16 @@ public class DashboardController {
     public ResponseEntity<Map<String, Object>> getDashboardStatistics() {
         // Build a simplified statistics map to avoid LazyInitializationException
         Map<String, Object> statistics = new HashMap<>();
-        statistics.put("totalRevenue", BigDecimal.valueOf(120000));
-        statistics.put("totalTransactions", 150);
-        statistics.put("successfulTransactions", 140);
-        statistics.put("failedTransactions", 10);
-        statistics.put("popularPlan", "Monthly 2GB/day");
 
-        // Add data about expiring plans (count only, not the actual plans to avoid LazyInitializationException)
-        try {
-            List<TransactionDto> expiringPlans = dashboardService.getExpiringTransactionsWithin3Days();
-            statistics.put("expiringPlansCount", expiringPlans.size());
-        } catch (Exception e) {
-            statistics.put("expiringPlansCount", 0);
-        }
+        // Use transaction service to get comprehensive transaction statistics
+        Map<String, Object> transactionStats = transactionService.getTransactionStatistics(null, null);
+
+        // Transfer key statistics to our dashboard stats
+        statistics.put("totalRevenue", transactionStats.get("totalRevenue"));
+        statistics.put("totalTransactions", transactionStats.get("totalTransactions"));
+        statistics.put("successfulTransactions", transactionStats.get("successfulTransactions"));
+        statistics.put("failedTransactions", transactionStats.get("failedTransactions"));
+        statistics.put("popularPlan", transactionStats.get("popularPlan"));
 
         return ResponseEntity.ok(statistics);
     }
