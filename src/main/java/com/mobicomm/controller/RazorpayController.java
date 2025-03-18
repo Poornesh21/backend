@@ -1,6 +1,7 @@
 package com.mobicomm.controller;
 
 import com.mobicomm.dto.RechargeRequest;
+import com.mobicomm.dto.TransactionDto;
 import com.mobicomm.service.RazorpayService;
 import com.mobicomm.service.TransactionService;
 import org.slf4j.Logger;
@@ -38,9 +39,11 @@ public class RazorpayController {
      */
     @PostMapping("/create-order")
     public ResponseEntity<Map<String, Object>> createRazorpayOrder(@RequestBody Map<String, Object> request) {
+        // Log that we received a request to this endpoint
+        logger.info("Received create-order request with path /api/razorpay/create-order");
         try {
             // Log entire request for debugging
-            logger.error("Full Request Payload: {}", request);
+            logger.info("Creating order with request: {}", request);
 
             // Extract parameters with safe defaults and detailed logging
             String mobileNumber = extractStringParam(request, "mobileNumber", "");
@@ -49,11 +52,11 @@ public class RazorpayController {
             String email = extractStringParam(request, "email", "");
 
             // Detailed logging of extracted parameters
-            logger.error("Extracted Parameters:");
-            logger.error("Mobile Number: {}", mobileNumber);
-            logger.error("Plan ID: {}", planId);
-            logger.error("Amount: {}", amount);
-            logger.error("Email: {}", email);
+            logger.info("Extracted Parameters:");
+            logger.info("Mobile Number: {}", mobileNumber);
+            logger.info("Plan ID: {}", planId);
+            logger.info("Amount: {}", amount);
+            logger.info("Email: {}", email);
 
             // Create Razorpay order
             Map<String, Object> orderResponse = razorpayService.createRazorpayOrder(
@@ -76,6 +79,80 @@ public class RazorpayController {
         }
     }
 
+    /**
+     * Verify Razorpay payment and process transaction
+     */
+    @PostMapping("/verify-payment")
+    public ResponseEntity<Map<String, Object>> verifyPayment(@RequestBody Map<String, Object> request) {
+        try {
+            logger.info("Verifying payment with request: {}", request);
+
+            // Extract verification parameters
+            String razorpayOrderId = extractStringParam(request, "razorpay_order_id", "");
+            String razorpayPaymentId = extractStringParam(request, "razorpay_payment_id", "");
+            String razorpaySignature = extractStringParam(request, "razorpay_signature", "");
+
+            // Extract transaction details
+            String mobileNumber = extractStringParam(request, "mobileNumber", "");
+            Integer planId = extractIntegerParam(request, "planId", 1);
+            BigDecimal amount = extractBigDecimalParam(request, "amount", BigDecimal.ZERO);
+            String email = extractStringParam(request, "email", "");
+
+            // Verify payment signature
+            boolean isValidSignature = razorpayService.verifyRazorpaySignature(
+                    razorpayOrderId, razorpayPaymentId, razorpaySignature);
+
+            // For test/development environment, continue even with invalid signature
+            boolean isTestEnvironment = razorpayKeyId != null && razorpayKeyId.startsWith("rzp_test_");
+
+            if (!isValidSignature && !isTestEnvironment) {
+                logger.error("Invalid Razorpay signature");
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "error",
+                        "message", "Invalid payment signature"
+                ));
+            }
+
+            // Log that we're accepting this payment (either valid signature or test environment)
+            logger.info("Payment accepted: {}", isValidSignature ? "Valid signature" : "Test environment override");
+
+            // Create recharge request for processing
+            RechargeRequest rechargeRequest = new RechargeRequest();
+            rechargeRequest.setMobileNumber(mobileNumber);
+            rechargeRequest.setPlanId(planId);
+            rechargeRequest.setAmount(amount);
+            rechargeRequest.setPaymentMethod("Razorpay | " + razorpayPaymentId);
+            rechargeRequest.setPaymentStatus("Completed");
+            rechargeRequest.setTransactionDate(LocalDateTime.now());
+
+            // Calculate expiry date based on plan validity (typical 30 days)
+            LocalDateTime expiryDate = LocalDateTime.now().plusDays(30);
+            rechargeRequest.setExpiryDate(expiryDate);
+
+            // Add email for notifications
+            rechargeRequest.setEmail(email);
+
+            // Process the recharge
+            TransactionDto transactionDto = transactionService.processRecharge(rechargeRequest);
+            logger.info("Transaction processed successfully: {}", transactionDto);
+
+            // Return success response
+            return ResponseEntity.ok(Map.of(
+                    "status", "success",
+                    "message", "Payment verified and transaction processed",
+                    "transactionId", transactionDto.getTransactionId(),
+                    "razorpayPaymentId", razorpayPaymentId
+            ));
+
+        } catch (Exception e) {
+            logger.error("Error verifying payment", e);
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "error",
+                    "message", "Payment verification failed: " + e.getMessage()
+            ));
+        }
+    }
+
     // Helper method to safely extract string parameter
     private String extractStringParam(Map<String, Object> request, String key, String defaultValue) {
         Object value = request.get(key);
@@ -89,8 +166,8 @@ public class RazorpayController {
     // Helper method to safely extract integer parameter
     private Integer extractIntegerParam(Map<String, Object> request, String key, Integer defaultValue) {
         Object value = request.get(key);
-        if (value == null) {
-            logger.warn("Parameter {} is null, using default: {}", key, defaultValue);
+        if (value == null || "undefined".equals(value.toString())) {
+            logger.info("Parameter {} is null or undefined, using default: {}", key, defaultValue);
             return defaultValue;
         }
 
@@ -99,9 +176,15 @@ public class RazorpayController {
             if (value instanceof Integer) {
                 return (Integer) value;
             }
-            return Integer.parseInt(value.toString());
+            // Handle string values
+            String stringValue = value.toString().trim();
+            if (stringValue.isEmpty()) {
+                logger.info("Parameter {} is empty string, using default: {}", key, defaultValue);
+                return defaultValue;
+            }
+            return Integer.parseInt(stringValue);
         } catch (NumberFormatException e) {
-            logger.error("Failed to parse {} as integer: {}", key, value);
+            logger.info("Failed to parse {} as integer: {}, using default: {}", key, value, defaultValue);
             return defaultValue;
         }
     }

@@ -34,9 +34,10 @@ public class TransactionService {
 
     @Autowired
     private EmailService emailService;
+
     /**
      * Process a recharge request and create transaction
-     * Updated to handle email notifications without updating user email in DB
+     * Updated to handle Razorpay payments
      */
     @Transactional
     public TransactionDto processRecharge(RechargeRequest request) {
@@ -48,8 +49,7 @@ public class TransactionService {
         // Find or create user for this mobile number
         User user = findOrCreateUser(request.getMobileNumber());
 
-        // Don't update the email in the database
-        // Just read the email for notification purposes
+        // Read the email for notification purposes
         String notificationEmail = request.getEmail();
 
         // Validate plan exists
@@ -61,9 +61,18 @@ public class TransactionService {
         transaction.setUserId(user.getUserId());
         transaction.setPlan(plan);
         transaction.setAmount(request.getAmount() != null ? request.getAmount() : BigDecimal.ZERO);
-        transaction.setPaymentStatus(request.getPaymentStatus() != null ?
-                request.getPaymentStatus() : "Completed");
+
+        // Handle payment status (default to Completed if not specified)
+        String paymentStatus = request.getPaymentStatus();
+        if (paymentStatus == null || paymentStatus.isEmpty()) {
+            paymentStatus = "Completed";
+        }
+        transaction.setPaymentStatus(paymentStatus);
+
+        // Save payment method (including Razorpay ID if available)
         transaction.setPaymentMethod(request.getPaymentMethod());
+
+        // Set transaction date (default to now if not specified)
         transaction.setTransactionDate(request.getTransactionDate() != null ?
                 request.getTransactionDate() : LocalDateTime.now());
 
@@ -101,8 +110,12 @@ public class TransactionService {
             try {
                 // Extract transaction ID for email
                 String transactionId = transaction.getTransactionId().toString();
-                if (transaction.getPaymentMethod() != null && transaction.getPaymentMethod().contains("TxnID:")) {
-                    transactionId = transaction.getPaymentMethod().split("TxnID:")[1].trim();
+                if (transaction.getPaymentMethod() != null && transaction.getPaymentMethod().contains("Razorpay")) {
+                    // For Razorpay, extract the payment ID
+                    String[] parts = transaction.getPaymentMethod().split("\\|");
+                    if (parts.length > 1) {
+                        transactionId = parts[1].trim();
+                    }
                 }
 
                 // Format transaction date
@@ -156,8 +169,8 @@ public class TransactionService {
             // Create a new user for this mobile number
             User newUser = new User();
             newUser.setMobileNumber(mobileNumber);
-            // Set default role for new users
-            newUser.setRoleId(2); // Assuming 2 is the regular user role ID
+            // Set default role for new users (2 = regular user)
+            newUser.setRoleId(2);
 
             return userRepository.save(newUser);
         }
