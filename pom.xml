@@ -76,11 +76,7 @@
 
         <!-- Add these dependencies to your pom.xml for Stripe integration -->
             <!-- Stripe Java SDK -->
-            <dependency>
-                <groupId>com.stripe</groupId>
-                <artifactId>stripe-java</artifactId>
-                <version>20.136.0</version>
-            </dependency>
+
 
             <!-- If you're using Spring Boot 2.x, add this for @Value and other annotations -->
             <dependency>

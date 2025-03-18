@@ -89,6 +89,9 @@ public class SecurityConfig {
                         // Authentication endpoints
                         .requestMatchers("/api/auth/**").permitAll()
 
+                        // Razorpay endpoints - allow public access
+                        .requestMatchers("/api/razorpay/**").permitAll()
+
                         // Email endpoints
                         .requestMatchers("/api/email/**").permitAll()
 
