@@ -89,8 +89,8 @@ public class SecurityConfig {
                         // Authentication endpoints
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // Stripe payment endpoints - Allow without authentication
-                        .requestMatchers("/api/stripe/**").permitAll()
+                        // Add this line to the SecurityConfig.java file in the authorizeHttpRequests section
+                        .requestMatchers("/api/email/**").permitAll() // Allow email endpoints without authentication
 
                         // Public API endpoints - read-only access
                         .requestMatchers(HttpMethod.GET, "/api/plans/**").permitAll()

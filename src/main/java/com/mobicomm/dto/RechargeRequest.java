@@ -13,4 +13,5 @@ public class RechargeRequest {
     private String paymentStatus;
     private LocalDateTime transactionDate;
     private LocalDateTime expiryDate;
+    private String email; // New field for email address
 }

@@ -38,6 +38,7 @@ public class TransactionService {
     /**
      * Process a recharge request and create transaction
      */
+    // Add this code to the processRecharge method in TransactionService.java
     @Transactional
     public TransactionDto processRecharge(RechargeRequest request) {
         // Validate planId is not null
@@ -47,6 +48,12 @@ public class TransactionService {
 
         // Find or create user for this mobile number
         User user = findOrCreateUser(request.getMobileNumber());
+
+        // Update email if provided in the request
+        if (request.getEmail() != null && !request.getEmail().isEmpty()) {
+            user.setEmail(request.getEmail());
+            userRepository.save(user);
+        }
 
         // Validate plan exists
         Plan plan = planRepository.findById(request.getPlanId())

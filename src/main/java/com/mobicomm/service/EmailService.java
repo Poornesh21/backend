@@ -1,6 +1,7 @@
 package com.mobicomm.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,9 @@ public class EmailService {
     @Autowired
     private JavaMailSender mailSender;
 
+    @Value("${admin.email:admin@mobicomm.com}")
+    private String adminEmail; // Admin email from properties, default if not set
+
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
 
     /**
@@ -37,6 +41,8 @@ public class EmailService {
 
             helper.setTo(toEmail);
             helper.setSubject("Your MobiComm Plan is Expiring Soon");
+            // CC admin on all reminder emails
+            helper.setCc(adminEmail);
 
             String emailContent = generateReminderEmailContent(mobileNumber, planName, expiryDate);
             helper.setText(emailContent, true); // true indicates HTML content
@@ -68,6 +74,8 @@ public class EmailService {
 
             helper.setTo(toEmail);
             helper.setSubject("MobiComm Recharge Invoice #" + transactionId);
+            // CC admin on all invoices
+            helper.setCc(adminEmail);
 
             String emailContent = generateInvoiceEmailContent(
                     mobileNumber, planName, amount, transactionId, paymentMethod, transactionDate
@@ -99,6 +107,8 @@ public class EmailService {
 
             helper.setTo(toEmail);
             helper.setSubject("MobiComm Recharge Confirmation");
+            // CC admin on all payment confirmations
+            helper.setCc(adminEmail);
 
             LocalDateTime now = LocalDateTime.now();
             String formattedDate = now.format(DATE_FORMATTER);
