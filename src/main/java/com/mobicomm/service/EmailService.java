@@ -1,6 +1,9 @@
 package com.mobicomm.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -16,12 +19,13 @@ import java.time.format.DateTimeFormatter;
  */
 @Service
 public class EmailService {
+    private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
 
     @Autowired
     private JavaMailSender mailSender;
 
-
-    private String adminEmail = "poornesh723@gmail.com";
+    @Value("${admin.email:poornesh723@gmail.com}")
+    private String adminEmail;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
 
@@ -34,22 +38,36 @@ public class EmailService {
      * @return true if email was sent successfully
      */
     public boolean sendReminderEmail(String toEmail, String mobileNumber, String planName, String expiryDate) {
+        if (toEmail == null || toEmail.trim().isEmpty()) {
+            logger.error("Cannot send reminder email: recipient email is empty");
+            return false;
+        }
+
         try {
+            logger.info("Preparing reminder email for: {}, mobile: {}", toEmail, mobileNumber);
+
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true);
 
             helper.setTo(toEmail);
             helper.setSubject("Your MobiComm Plan is Expiring Soon");
+
             // CC admin on all reminder emails
-            helper.setCc(adminEmail);
+            if (adminEmail != null && !adminEmail.isEmpty()) {
+                helper.setCc(adminEmail);
+            }
 
             String emailContent = generateReminderEmailContent(mobileNumber, planName, expiryDate);
             helper.setText(emailContent, true); // true indicates HTML content
 
             mailSender.send(message);
+            logger.info("Successfully sent reminder email to: {}", toEmail);
             return true;
         } catch (MessagingException e) {
-            e.printStackTrace();
+            logger.error("Failed to send reminder email to: {}. Error: {}", toEmail, e.getMessage(), e);
+            return false;
+        } catch (Exception e) {
+            logger.error("Unexpected error sending reminder email: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -67,14 +85,24 @@ public class EmailService {
      */
     public boolean sendInvoiceEmail(String toEmail, String mobileNumber, String planName, String amount,
                                     String transactionId, String paymentMethod, String transactionDate) {
+        if (toEmail == null || toEmail.trim().isEmpty()) {
+            logger.error("Cannot send invoice email: recipient email is empty");
+            return false;
+        }
+
         try {
+            logger.info("Preparing invoice email for: {}, transaction: {}", toEmail, transactionId);
+
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true);
 
             helper.setTo(toEmail);
             helper.setSubject("MobiComm Recharge Invoice #" + transactionId);
+
             // CC admin on all invoices
-            helper.setCc(adminEmail);
+            if (adminEmail != null && !adminEmail.isEmpty()) {
+                helper.setCc(adminEmail);
+            }
 
             String emailContent = generateInvoiceEmailContent(
                     mobileNumber, planName, amount, transactionId, paymentMethod, transactionDate
@@ -82,9 +110,13 @@ public class EmailService {
             helper.setText(emailContent, true); // true indicates HTML content
 
             mailSender.send(message);
+            logger.info("Successfully sent invoice email to: {}", toEmail);
             return true;
         } catch (MessagingException e) {
-            e.printStackTrace();
+            logger.error("Failed to send invoice email to: {}. Error: {}", toEmail, e.getMessage(), e);
+            return false;
+        } catch (Exception e) {
+            logger.error("Unexpected error sending invoice email: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -100,14 +132,24 @@ public class EmailService {
      */
     public boolean sendPaymentConfirmationEmail(String toEmail, String mobileNumber, String planName,
                                                 String amount, String transactionId) {
+        if (toEmail == null || toEmail.trim().isEmpty()) {
+            logger.error("Cannot send payment confirmation email: recipient email is empty");
+            return false;
+        }
+
         try {
+            logger.info("Preparing payment confirmation email for: {}, transaction: {}", toEmail, transactionId);
+
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true);
 
             helper.setTo(toEmail);
             helper.setSubject("MobiComm Recharge Confirmation");
+
             // CC admin on all payment confirmations
-            helper.setCc(adminEmail);
+            if (adminEmail != null && !adminEmail.isEmpty()) {
+                helper.setCc(adminEmail);
+            }
 
             LocalDateTime now = LocalDateTime.now();
             String formattedDate = now.format(DATE_FORMATTER);
@@ -118,9 +160,13 @@ public class EmailService {
             helper.setText(emailContent, true); // true indicates HTML content
 
             mailSender.send(message);
+            logger.info("Successfully sent payment confirmation email to: {}", toEmail);
             return true;
         } catch (MessagingException e) {
-            e.printStackTrace();
+            logger.error("Failed to send payment confirmation email to: {}. Error: {}", toEmail, e.getMessage(), e);
+            return false;
+        } catch (Exception e) {
+            logger.error("Unexpected error sending payment confirmation email: {}", e.getMessage(), e);
             return false;
         }
     }
