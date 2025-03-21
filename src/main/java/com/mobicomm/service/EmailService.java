@@ -21,7 +21,7 @@ public class EmailService {
     private JavaMailSender mailSender;
 
 
-    private String adminEmail = "poorneshsundravel@gmail.com";
+    private String adminEmail = "poornesh723@gmail.com";
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
 

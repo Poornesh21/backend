@@ -2,10 +2,12 @@ package com.mobicomm.service;
 
 import com.mobicomm.dto.TransactionDto;
 import com.mobicomm.dto.UserExpiringPlanDto;
+import com.mobicomm.entity.PlanCategory;
 import com.mobicomm.entity.Transaction;
 import com.mobicomm.entity.User;
 import com.mobicomm.repository.TransactionRepository;
 import com.mobicomm.repository.UserRepository;
+import com.mobicomm.repository.PlanCategoryRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +33,9 @@ public class DashboardService {
     @Autowired
     private TransactionService transactionService;
 
+    @Autowired
+    private PlanCategoryRepository planCategoryRepository;
+
     /**
      * Get user transaction history.
      */
@@ -43,7 +48,6 @@ public class DashboardService {
             logger.error("User not found with ID: {}", userId);
             throw new RuntimeException("User not found with ID: " + userId);
         }
-
 
         // Find transactions for the user
         List<Transaction> userTransactions = transactionRepository.findByUserIdOrderByTransactionDateDesc(userId);
@@ -63,41 +67,44 @@ public class DashboardService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime threeDaysFromNow = now.plusDays(3);
 
-        logger.info("Fetching users with plans expiring in 1-3 days");
-        logger.info("Current Date: {}", now);
-        logger.info("Three Days Cutoff: {}", threeDaysFromNow);
-
-        // Get all transactions expiring soon
-        List<Transaction> expiringTransactions = transactionRepository.findByExpiryDateBetween(now, threeDaysFromNow);
-        logger.info("Found {} transactions expiring within 3 days", expiringTransactions.size());
+        // Query to find users with plans expiring based on last_recharge_date
+        List<User> usersWithExpiringPlans = userRepository.findUsersWithPlansExpiringInOneToThreeDays(now, threeDaysFromNow);
 
         List<UserExpiringPlanDto> result = new ArrayList<>();
 
-        // For each transaction, get the user and create a DTO
-        for (Transaction transaction : expiringTransactions) {
-            try {
-                Optional<User> userOpt = userRepository.findById(transaction.getUserId());
-                if (userOpt.isPresent()) {
-                    User user = userOpt.get();
+        for (User user : usersWithExpiringPlans) {
+            // Find the most recent transaction for this user
+            Optional<Transaction> latestTransaction = transactionRepository
+                    .findByUserIdOrderByTransactionDateDesc(user.getUserId())
+                    .stream()
+                    .findFirst();
 
-                    UserExpiringPlanDto dto = new UserExpiringPlanDto();
-                    dto.setUserId(user.getUserId());
-                    dto.setMobileNumber(user.getMobileNumber());
+            if (latestTransaction.isPresent()) {
+                Transaction transaction = latestTransaction.get();
 
-                    // Key change: Always use transaction's expiry date
-                    dto.setExpiryDate(transaction.getExpiryDate());
-                    dto.setPaymentStatus(transaction.getPaymentStatus());
+                UserExpiringPlanDto dto = new UserExpiringPlanDto();
+                dto.setUserId(user.getUserId());
+                dto.setMobileNumber(user.getMobileNumber());
+                dto.setExpiryDate(transaction.getExpiryDate());
+                dto.setPaymentStatus(transaction.getPaymentStatus());
 
-                    // Set plan name based on transaction's plan
-                    dto.setPlanName(transaction.getPlan() != null
-                            ? transaction.getPlan().getDataLimit() + " Plan"
-                            : "Unnamed Plan");
+                // Get the category name from the plan
+                try {
+                    if (transaction.getPlan() != null && transaction.getPlan().getCategoryId() != null) {
+                        Integer categoryId = transaction.getPlan().getCategoryId();
+                        Optional<PlanCategory> category = planCategoryRepository.findById(categoryId);
 
-                    result.add(dto);
+                        dto.setPlanName(category.map(PlanCategory::getCategoryName)
+                                .orElse("Uncategorized"));
+                    } else {
+                        dto.setPlanName("Uncategorized");
+                    }
+                } catch (Exception e) {
+                    logger.error("Error retrieving category for transaction: {}", transaction.getTransactionId(), e);
+                    dto.setPlanName("Uncategorized");
                 }
-            } catch (Exception e) {
-                logger.error("Error processing transaction with ID {}: {}",
-                        transaction.getTransactionId(), e.getMessage());
+
+                result.add(dto);
             }
         }
 

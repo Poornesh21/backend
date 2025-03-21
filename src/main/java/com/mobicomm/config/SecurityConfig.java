@@ -86,10 +86,12 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Error pages - permit all access
+                        .requestMatchers("/error/**", "/error").permitAll()
+
                         // Authentication endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/razorpay/**").permitAll()
-
 
                         // Email endpoints
                         .requestMatchers("/api/email/**").permitAll()
@@ -115,6 +117,7 @@ public class SecurityConfig {
                         // Static resources
                         .requestMatchers("/", "/index.html", "/Recharge.html", "/Payment.html",
                                 "/RazorpayPayment.html", "/css/**", "/js/**", "/images/**").permitAll()
+                        .requestMatchers("/favicon.ico", "/test.html").permitAll()
 
                         // Any other request needs authentication
                         .anyRequest().authenticated()
