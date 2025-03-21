@@ -9,6 +9,8 @@ import com.mobicomm.exception.ResourceNotFoundException;
 import com.mobicomm.repository.PlanRepository;
 import com.mobicomm.repository.TransactionRepository;
 import com.mobicomm.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
+    private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
 
     @Autowired
     private TransactionRepository transactionRepository;
@@ -37,21 +40,32 @@ public class TransactionService {
 
     /**
      * Process a recharge request and create transaction
-     * Updated to handle Razorpay payments
+     * Updated to handle Razorpay payments and send email notifications
      */
     @Transactional
     public TransactionDto processRecharge(RechargeRequest request) {
+        logger.debug("Processing recharge request: {}", request);
+
         // Validate planId is not null
         if (request.getPlanId() == null) {
+            logger.error("Plan ID cannot be null");
             throw new IllegalArgumentException("Plan ID cannot be null");
         }
 
         // Find or create user for this mobile number
         User user = findOrCreateUser(request.getMobileNumber());
 
+        // Update user email if provided in the request
+        if (request.getEmail() != null && !request.getEmail().isEmpty()) {
+            logger.debug("Updating user email to: {}", request.getEmail());
+            user.setEmail(request.getEmail());
+            userRepository.save(user);
+        }
+
         // Validate plan exists
         Plan plan = planRepository.findById(request.getPlanId())
                 .orElseThrow(() -> new ResourceNotFoundException("Plan", request.getPlanId()));
+        logger.debug("Found plan: {}", plan.getPlanId());
 
         // Create transaction entity
         Transaction transaction = new Transaction();
@@ -90,14 +104,55 @@ public class TransactionService {
         java.sql.Timestamp lastRechargeTimestamp = java.sql.Timestamp.valueOf(transactionDate);
         user.setLastRechargeDate(lastRechargeTimestamp);
         userRepository.save(user);
+        logger.debug("Updated user's last recharge date to: {}", lastRechargeTimestamp);
 
         // Save transaction
         Transaction savedTransaction = transactionRepository.save(transaction);
+        logger.info("Transaction saved successfully with ID: {}", savedTransaction.getTransactionId());
 
         // Convert to DTO
         TransactionDto transactionDto = convertToDto(savedTransaction);
 
-        // Rest of the method remains the same (email sending, etc.)
+        // Send email notifications if transaction is successful and email is available
+        if (("Completed".equalsIgnoreCase(paymentStatus) || "Success".equalsIgnoreCase(paymentStatus))
+                && user.getEmail() != null && !user.getEmail().isEmpty()) {
+
+            try {
+                logger.info("Attempting to send invoice email to: {}", user.getEmail());
+
+                // Get plan name for email
+                String planName = plan.getDataLimit() != null ?
+                        plan.getDataLimit() + " GB Plan" : "Mobile Recharge Plan";
+
+                // Format amount for email
+                String amountStr = transaction.getAmount().toString();
+
+                // Send invoice email
+                boolean emailSent = emailService.sendInvoiceEmail(
+                        user.getEmail(),
+                        user.getMobileNumber(),
+                        planName,
+                        amountStr,
+                        savedTransaction.getTransactionId().toString(),
+                        savedTransaction.getPaymentMethod(),
+                        savedTransaction.getTransactionDate().toString()
+                );
+
+                if (emailSent) {
+                    logger.info("Invoice email sent successfully to: {}", user.getEmail());
+                } else {
+                    logger.warn("Failed to send invoice email to: {}", user.getEmail());
+                }
+
+            } catch (Exception e) {
+                // Log the error but don't fail the transaction
+                logger.error("Error sending email notification: {}", e.getMessage(), e);
+            }
+        } else {
+            logger.info("Email notification not sent. Status: {}, Email: {}",
+                    paymentStatus, user.getEmail());
+        }
+
         return transactionDto;
     }
 
@@ -105,18 +160,23 @@ public class TransactionService {
      * Find existing user or create a new user record if not found
      */
     private User findOrCreateUser(String mobileNumber) {
+        logger.debug("Looking up user for mobile number: {}", mobileNumber);
         Optional<User> userOpt = userRepository.findByMobileNumber(mobileNumber);
 
         if (userOpt.isPresent()) {
+            logger.debug("Found existing user with ID: {}", userOpt.get().getUserId());
             return userOpt.get();
         } else {
+            logger.info("User not found with mobile number: {}. Creating new user", mobileNumber);
             // Create a new user for this mobile number
             User newUser = new User();
             newUser.setMobileNumber(mobileNumber);
             // Set default role for new users (2 = regular user)
             newUser.setRoleId(2);
 
-            return userRepository.save(newUser);
+            User savedUser = userRepository.save(newUser);
+            logger.info("Created new user with ID: {}", savedUser.getUserId());
+            return savedUser;
         }
     }
 
@@ -124,13 +184,16 @@ public class TransactionService {
      * Get transactions by mobile number
      */
     public List<TransactionDto> getTransactionsByMobileNumber(String mobileNumber) {
+        logger.debug("Getting transactions for mobile number: {}", mobileNumber);
         Optional<User> user = userRepository.findByMobileNumber(mobileNumber);
 
         if (user.isPresent()) {
             List<Transaction> transactions = transactionRepository.findByUserIdOrderByTransactionDateDesc(user.get().getUserId());
+            logger.debug("Found {} transactions for mobile: {}", transactions.size(), mobileNumber);
             return transactions.stream().map(this::convertToDto).collect(Collectors.toList());
         }
 
+        logger.warn("No user found with mobile number: {}", mobileNumber);
         return Collections.emptyList();
     }
 
@@ -138,7 +201,9 @@ public class TransactionService {
      * Get transactions by user ID
      */
     public List<TransactionDto> getTransactionsByUserId(Integer userId) {
+        logger.debug("Getting transactions for user ID: {}", userId);
         List<Transaction> transactions = transactionRepository.findByUserIdOrderByTransactionDateDesc(userId);
+        logger.debug("Found {} transactions for user ID: {}", transactions.size(), userId);
         return transactions.stream().map(this::convertToDto).collect(Collectors.toList());
     }
 
@@ -146,6 +211,7 @@ public class TransactionService {
      * Get transaction by ID
      */
     public TransactionDto getTransactionById(Integer id) {
+        logger.debug("Getting transaction with ID: {}", id);
         Transaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", id));
         return convertToDto(transaction);
@@ -155,7 +221,13 @@ public class TransactionService {
      * Get transaction by payment reference
      */
     public TransactionDto getTransactionByReference(String reference) {
+        logger.debug("Looking up transaction by reference: {}", reference);
         Optional<Transaction> transaction = transactionRepository.findByPaymentReference(reference);
+        if (transaction.isPresent()) {
+            logger.debug("Found transaction: {}", transaction.get().getTransactionId());
+        } else {
+            logger.debug("No transaction found with reference: {}", reference);
+        }
         return transaction.map(this::convertToDto).orElse(null);
     }
 
@@ -163,6 +235,9 @@ public class TransactionService {
      * Get all transactions with optional filtering
      */
     public List<TransactionDto> getAllTransactionsWithFilters(String status, LocalDate fromDate, LocalDate toDate, Integer planId) {
+        logger.debug("Getting transactions with filters - status: {}, fromDate: {}, toDate: {}, planId: {}",
+                status, fromDate, toDate, planId);
+
         List<Transaction> transactions;
 
         if (status != null || fromDate != null || toDate != null || planId != null) {
@@ -175,6 +250,7 @@ public class TransactionService {
             transactions = transactionRepository.findAll();
         }
 
+        logger.debug("Found {} transactions matching filters", transactions.size());
         return transactions.stream()
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
@@ -184,6 +260,7 @@ public class TransactionService {
      * Get transaction statistics
      */
     public Map<String, Object> getTransactionStatistics(LocalDate fromDate, LocalDate toDate) {
+        logger.debug("Generating transaction statistics from: {} to: {}", fromDate, toDate);
         Map<String, Object> statistics = new HashMap<>();
 
         // Set default date range if not provided (last 30 days)
@@ -197,6 +274,7 @@ public class TransactionService {
 
         // Get all transactions in the date range
         List<Transaction> transactions = transactionRepository.findByTransactionDateBetween(fromDateTime, toDateTime);
+        logger.debug("Found {} transactions in date range", transactions.size());
 
         // Calculate statistics
         BigDecimal totalRevenue = transactions.stream()
@@ -243,6 +321,7 @@ public class TransactionService {
             }
         }
 
+        logger.debug("Generated statistics: {}", statistics);
         return statistics;
     }
 
@@ -250,8 +329,10 @@ public class TransactionService {
      * Get recent transactions (last X days)
      */
     public List<TransactionDto> getRecentTransactions(Integer days) {
+        logger.debug("Getting transactions from the last {} days", days);
         LocalDateTime fromDate = LocalDateTime.now().minusDays(days);
         List<Transaction> transactions = transactionRepository.findByTransactionDateAfterOrderByTransactionDateDesc(fromDate);
+        logger.debug("Found {} recent transactions", transactions.size());
         return transactions.stream().map(this::convertToDto).collect(Collectors.toList());
     }
 
@@ -259,7 +340,9 @@ public class TransactionService {
      * Get transactions expiring within a specific date range
      */
     public List<TransactionDto> getExpiringTransactions(LocalDateTime startDate, LocalDateTime endDate) {
+        logger.debug("Getting transactions expiring between {} and {}", startDate, endDate);
         List<Transaction> transactions = transactionRepository.findExpiringTransactions(startDate, endDate);
+        logger.debug("Found {} expiring transactions", transactions.size());
         return transactions.stream().map(this::convertToDto).collect(Collectors.toList());
     }
 
@@ -279,7 +362,8 @@ public class TransactionService {
             }
         } catch (Exception e) {
             // If user lookup fails, log but continue
-            System.err.println("Error finding user for transaction: " + e.getMessage());
+            logger.error("Error finding user for transaction {}: {}",
+                    transaction.getTransactionId(), e.getMessage());
         }
 
         // Get plan details
@@ -302,6 +386,7 @@ public class TransactionService {
                         }
                     } catch (NumberFormatException e) {
                         // Not a number, leave as is
+                        logger.warn("Could not parse data limit as number: {}", dataLimit);
                     }
                 }
             }
