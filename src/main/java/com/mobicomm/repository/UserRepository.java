@@ -49,10 +49,12 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     @Query("""
     SELECT u FROM User u 
     WHERE u.lastRechargeDate IS NOT NULL 
-    AND DATEDIFF(CURRENT_DATE, u.lastRechargeDate) BETWEEN 28 AND 30 
+    AND DATEDIFF(CURRENT_DATE, u.lastRechargeDate) >= 27 
+    AND DATEDIFF(CURRENT_DATE, u.lastRechargeDate) <= 29
 """)
-    List<User> findUsersWithPlansExpiringInOneToThreeDays(
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
+    List<User> findUsersWithPlansExpiringInThreeToOneDays(
+            LocalDateTime now,
+            LocalDateTime threeDaysFromNow,
+            LocalDateTime oneDayFromNow
     );
 }

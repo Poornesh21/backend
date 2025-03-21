@@ -1,5 +1,6 @@
 package com.mobicomm.dto;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public class UserExpiringPlanDto {
@@ -10,6 +11,16 @@ public class UserExpiringPlanDto {
     private LocalDateTime expiryDate;
     private String paymentStatus;
     private String planName;
+    private BigDecimal amount; // Add this field
+
+    // Add getter and setter for amount
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
 
     // Getters and Setters
     public Integer getUserId() {

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 
 @Service
 public class DashboardService {
@@ -64,51 +65,54 @@ public class DashboardService {
      */
     @Transactional(readOnly = true)
     public List<UserExpiringPlanDto> getUsersWithExpiringPlans() {
-        // Assuming a typical 30-day plan validity from last recharge date
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime threeDaysFromNow = now.plusDays(3);
-
-        // Query to find users with plans expiring based on last_recharge_date
-        List<User> usersWithExpiringPlans = userRepository.findUsersWithPlansExpiringInOneToThreeDays(now, threeDaysFromNow);
+        LocalDateTime oneDayFromNow = now.plusDays(1);
 
         List<UserExpiringPlanDto> result = new ArrayList<>();
+
+        // Modify the method call to match the repository method signature
+        List<User> usersWithExpiringPlans = userRepository.findUsersWithPlansExpiringInThreeToOneDays(now, threeDaysFromNow, oneDayFromNow);
 
         for (User user : usersWithExpiringPlans) {
             UserExpiringPlanDto dto = new UserExpiringPlanDto();
             dto.setUserId(user.getUserId());
             dto.setMobileNumber(user.getMobileNumber());
 
-            // Calculate expiry date directly from last_recharge_date
+            // Calculate expiry date and days remaining
             if (user.getLastRechargeDate() != null) {
                 LocalDateTime lastRechargeDate = user.getLastRechargeDate().toLocalDateTime();
                 LocalDateTime expiryDate = lastRechargeDate.plusDays(30); // Assuming 30-day validity
                 dto.setExpiryDate(expiryDate);
             }
 
-            // Additional logic to get plan details (optional)
-            try {
-                Optional<Transaction> latestTransaction = transactionRepository
-                        .findByUserIdOrderByTransactionDateDesc(user.getUserId())
-                        .stream()
-                        .findFirst();
+            // Find the most recent transaction to get accurate plan details
+            Optional<Transaction> latestTransaction = transactionRepository
+                    .findByUserIdOrderByTransactionDateDesc(user.getUserId())
+                    .stream()
+                    .findFirst();
 
-                if (latestTransaction.isPresent()) {
-                    Transaction transaction = latestTransaction.get();
-                    dto.setPaymentStatus(transaction.getPaymentStatus());
+            if (latestTransaction.isPresent()) {
+                Transaction transaction = latestTransaction.get();
 
-                    // Get plan category name
-                    if (transaction.getPlan() != null && transaction.getPlan().getCategoryId() != null) {
-                        Integer categoryId = transaction.getPlan().getCategoryId();
-                        Optional<PlanCategory> category = planCategoryRepository.findById(categoryId);
-                        dto.setPlanName(category.map(PlanCategory::getCategoryName)
-                                .orElse("Uncategorized"));
-                    } else {
-                        dto.setPlanName("Uncategorized");
-                    }
+                // Set payment status
+                dto.setPaymentStatus(transaction.getPaymentStatus());
+
+                // Get plan details
+                if (transaction.getPlan() != null) {
+                    // Set plan name
+                    dto.setPlanName(transaction.getPlan().getDataLimit() + " Plan");
+
+                    // Set plan price correctly
+                    BigDecimal planPrice = transaction.getPlan().getPrice();
+                    dto.setAmount(planPrice != null ? planPrice : BigDecimal.ZERO);
+                } else {
+                    dto.setPlanName("Uncategorized");
+                    dto.setAmount(BigDecimal.ZERO);
                 }
-            } catch (Exception e) {
-                logger.error("Error retrieving additional transaction details", e);
+            } else {
                 dto.setPlanName("Uncategorized");
+                dto.setAmount(BigDecimal.ZERO);
             }
 
             result.add(dto);
@@ -116,4 +120,5 @@ public class DashboardService {
 
         return result;
     }
+
 }
