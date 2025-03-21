@@ -47,10 +47,10 @@ public interface UserRepository extends JpaRepository<User, Integer> {
      * Find users with plans expiring within 1-3 days based on their last recharge date
      */
     @Query("""
-        SELECT u FROM User u 
-        WHERE u.lastRechargeDate IS NOT NULL 
-        AND DATEDIFF(CURRENT_DATE, u.lastRechargeDate) BETWEEN 28 AND 30 
-    """)
+    SELECT u FROM User u 
+    WHERE u.lastRechargeDate IS NOT NULL 
+    AND DATEDIFF(CURRENT_DATE, u.lastRechargeDate) BETWEEN 28 AND 30 
+""")
     List<User> findUsersWithPlansExpiringInOneToThreeDays(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate

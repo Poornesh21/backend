@@ -64,6 +64,7 @@ public class DashboardService {
      */
     @Transactional(readOnly = true)
     public List<UserExpiringPlanDto> getUsersWithExpiringPlans() {
+        // Assuming a typical 30-day plan validity from last recharge date
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime threeDaysFromNow = now.plusDays(3);
 
@@ -73,39 +74,44 @@ public class DashboardService {
         List<UserExpiringPlanDto> result = new ArrayList<>();
 
         for (User user : usersWithExpiringPlans) {
-            // Find the most recent transaction for this user
-            Optional<Transaction> latestTransaction = transactionRepository
-                    .findByUserIdOrderByTransactionDateDesc(user.getUserId())
-                    .stream()
-                    .findFirst();
+            UserExpiringPlanDto dto = new UserExpiringPlanDto();
+            dto.setUserId(user.getUserId());
+            dto.setMobileNumber(user.getMobileNumber());
 
-            if (latestTransaction.isPresent()) {
-                Transaction transaction = latestTransaction.get();
+            // Calculate expiry date directly from last_recharge_date
+            if (user.getLastRechargeDate() != null) {
+                LocalDateTime lastRechargeDate = user.getLastRechargeDate().toLocalDateTime();
+                LocalDateTime expiryDate = lastRechargeDate.plusDays(30); // Assuming 30-day validity
+                dto.setExpiryDate(expiryDate);
+            }
 
-                UserExpiringPlanDto dto = new UserExpiringPlanDto();
-                dto.setUserId(user.getUserId());
-                dto.setMobileNumber(user.getMobileNumber());
-                dto.setExpiryDate(transaction.getExpiryDate());
-                dto.setPaymentStatus(transaction.getPaymentStatus());
+            // Additional logic to get plan details (optional)
+            try {
+                Optional<Transaction> latestTransaction = transactionRepository
+                        .findByUserIdOrderByTransactionDateDesc(user.getUserId())
+                        .stream()
+                        .findFirst();
 
-                // Get the category name from the plan
-                try {
+                if (latestTransaction.isPresent()) {
+                    Transaction transaction = latestTransaction.get();
+                    dto.setPaymentStatus(transaction.getPaymentStatus());
+
+                    // Get plan category name
                     if (transaction.getPlan() != null && transaction.getPlan().getCategoryId() != null) {
                         Integer categoryId = transaction.getPlan().getCategoryId();
                         Optional<PlanCategory> category = planCategoryRepository.findById(categoryId);
-
                         dto.setPlanName(category.map(PlanCategory::getCategoryName)
                                 .orElse("Uncategorized"));
                     } else {
                         dto.setPlanName("Uncategorized");
                     }
-                } catch (Exception e) {
-                    logger.error("Error retrieving category for transaction: {}", transaction.getTransactionId(), e);
-                    dto.setPlanName("Uncategorized");
                 }
-
-                result.add(dto);
+            } catch (Exception e) {
+                logger.error("Error retrieving additional transaction details", e);
+                dto.setPlanName("Uncategorized");
             }
+
+            result.add(dto);
         }
 
         return result;
